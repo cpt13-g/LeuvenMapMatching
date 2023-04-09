@@ -1185,7 +1185,31 @@ class BaseMatcher:
             prev_state = state
         return nodes
 
+    def _calculate_angle(self,nodes0:list,nodes1:list):
+        vertex=[node for node in nodes0 if node in nodes1][0]
+        nodes0.remove(vertex)
+        nodes1.remove(vertex)
+        A=self.map.graph[nodes0[0]][0]
+        B=self.map.graph[vertex][0]
+        C=self.map.graph[nodes1[0]][0]
+        p1 = np.array(A)
+        p2 = np.array(B)
+        p3 = np.array(C)
+
+        v1 = p1 - p2
+        v2 = p3 - p2
+
+        angle = np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+        print(A)
+        print(B)
+        print(C)
+        print(angle)
+        return angle
+
+
     def _build_matching_path(self, start_m, max_depth=None):
+        fallback=False
+        wrong_path=[]
         lattice_best = []
         node_max = start_m
         cur_depth = 0
@@ -1202,12 +1226,29 @@ class BaseMatcher:
             node_max_last = node_max
             node_max: Optional[BaseMatching] = None
             for prev_m in node_max_last.prev:
-                if prev_m is not None and (node_max is None or prev_m.logprob > node_max.logprob):
-                    node_max = prev_m
+                if prev_m is not None and (node_max is None or prev_m.logprob > node_max.logprob) :
+                    if node_max_last.edge_m.key==prev_m.edge_m.key or self._calculate_angle(node_max_last.nodes,prev_m.nodes)>np.pi/2 and prev_m not in wrong_path :
+                        node_max = prev_m
+                        fallback=False
             if node_max is None:
                 logger.error("Did not find a matching node for path point at index {}. ".format(node_max_last.obs) +
                              "Stopped building path.")
-                break
+                if fallback:
+                    break
+                else:
+                    fallback=True
+                    wrong_node = lattice_best.pop()
+                    cur_depth -= 1
+                    if wrong_node and( wrong_node.nodes[0] < 2000 or wrong_node.nodes[1] < 2000):
+                        wrong_node = lattice_best.pop()
+                        cur_depth -= 1
+                    while wrong_node and wrong_node.nodes[0]>=2000 and wrong_node.nodes[1]>=2000:
+                        wrong_node=lattice_best.pop()
+                        cur_depth -= 1
+                    wrong_path.append(wrong_node)
+                    wrong_node = lattice_best.pop()
+                    cur_depth -= 1
+                    node_max=wrong_node
             logger.debug("Max   ({}): {}".format(node_max.obs, node_max))
             lattice_best.append(node_max)
             if node_max.is_emitting():
